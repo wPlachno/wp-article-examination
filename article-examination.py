@@ -41,7 +41,7 @@ def get_list_of_files_in(path):
     file_list = []
     for file in directory_path.iterdir():
         file_list.append(file.name)
-    return filter(named_as_markdown_file, file_list)
+    return list(filter(named_as_markdown_file, file_list))
 
 
 number_of_command_line_tokens = len(sys.argv)
