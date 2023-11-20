@@ -50,18 +50,20 @@ all of this without opening or writing an aep-control.pickle file.
 
 # TODO: make sure of output when no markdown
 flag = dict(
-    ALLLINKS=False, # Print a list of all markdown links in each file
-    DEBUG=False,    # Print all debug statements and end with a full print of the articles.
-    # TODO: Make sure functionality matches DEBUG
+    ALLLINKS=False,  # Print a list of all Markdown links in each file
+    DEBUG=False,  # Print all debug statements and end with a full print of the articles.
     HISTORY=False,  # Print the existing log to the terminal without running the link check
     NOCACHE=False,  # Run without checking or serializing to "aep-control.pickle"
-    NONMD=False,    # Include all links, not just local markdown links
-    VERBOSE=False   # Print any log messages that trigger while executing
+    NONMD=False,  # Include all links, not just local Markdown links
+    VERBOSE=False  # Print any log messages that trigger while executing
 )
+
+
 def number_of_flags():
     """
-    Simply returns the number of flags that have been marked.
-    :return:
+    Simply returns the number of flags that have been marked. Used
+    simply to test whether HISTORY is the only current flag.
+    :return: The number of flags set to true
     """
     number_true = 0
     for this_flag in flag:
@@ -70,7 +72,6 @@ def number_of_flags():
     return number_true
 
 
-# dbg: If debug mode is active, print all statements on the same line
 def dbg(*statements):
     """
     Prints the parameters only if debug mode is active.
@@ -106,6 +107,44 @@ class Article:
         self.exists = exists
         self.md_links = []
         self.linked_from = []
+        self.all_links = []
+
+    def get_non_md_links(self):
+        """
+        Compares the articles all_links list with its md_links list and
+        returns the difference
+        :return: The links which exist in all_links, but not in md_links
+        """
+        non_md_links = []
+        for link in self.all_links:
+            if link not in self.md_links:
+                non_md_links.append(link)
+        return non_md_links
+
+    def add_link(self, link):
+        """
+        Adds a link to the articles all_links
+        :param link: The link to add
+        :return: Whether the link was freshly added
+        """
+        if not self.all_links:
+            self.all_links = []
+        if link not in self.all_links:
+            self.all_links.append(link)
+            return True
+        return False
+
+    def remove_link(self, link):
+        """
+        Removes a link from the article's all_links list
+        :param link: The link to remove
+        :return: Whether a link was actually removed
+        """
+        if self.all_links:
+            if link in self.all_links:
+                self.all_links.remove(link)
+                return True
+        return False
 
     def add_md_link_to(self, md_file_name):
         """
@@ -114,7 +153,7 @@ class Article:
         md_file_name
         :param md_file_name: The file_name, not path, of the file
         that this article's markdown file links to,
-        :return: Whether the file was added or already existed
+        :return: Whether the file was freshly added
         """
         if md_file_name not in self.md_links:
             self.md_links.append(md_file_name)
@@ -207,6 +246,11 @@ class ArticleExaminer:
         self.set_directory_path(self.directory_path)
 
     def log(self, core_message):
+        """
+        Adds a message to the log, after getting its timestamp
+        :param core_message: The message to log
+        :return: None
+        """
         log_message = get_time_stamp() + ": " + core_message
         self.log_archive.append(log_message)
         if flag["DEBUG"] or flag["VERBOSE"]:
@@ -217,7 +261,8 @@ class ArticleExaminer:
         If the path is valid, reinitialize this article_examiner
         with a full file list, a list of markdown files, and a
         fresh article dictionary, already initialized with the
-        correct articles, but no link information.
+        correct articles, but no link information. If a control file
+        exists, deserialize it.
         :param directory_path: A directory path with markdown files inside
         :return: None
         """
@@ -250,7 +295,7 @@ class ArticleExaminer:
                     self.articles[md_file] = Article(md_file,
                                                      self.directory_path,
                                                      exists=True)
-                    dbg("Found new markdown file: "+md_file)
+                    dbg("Found new markdown file: " + md_file)
 
     def add_link_between_articles(self, source_name, destination_name):
         """
@@ -271,7 +316,7 @@ class ArticleExaminer:
         # Try to add the link and log if link didn't already exist
         if self.articles[source_name].add_md_link_to(destination_name):
             self.articles[destination_name].add_md_link_from(source_name)
-            self.log("+ link: " + source_name + " -> " + destination_name)
+            self.log("+ md_link: " + source_name + " -> " + destination_name)
 
     def remove_link_between_articles(self, source_name, destination_name):
         """
@@ -284,7 +329,7 @@ class ArticleExaminer:
         """
         # Remove the link from the source
         self.articles[source_name].remove_md_link_to(destination_name)
-        self.log("- link: " + source_name + " -> " + destination_name)
+        self.log("- md_link: " + source_name + " -> " + destination_name)
         # Remove the link from the destination and delete if no
         # longer needed
         if (self.articles[destination_name]
@@ -303,33 +348,42 @@ class ArticleExaminer:
         for file_name in self.md_file_list:
             article = self.articles[file_name]
             if not article.exists:
-                dbg("Found an article that used to be missing: "+article.name)
+                dbg("Found an article that used to be missing: " + article.name)
                 article.exists = True
             # Only update links if file has changed
             file_last_modified = pathlib.Path(article.path).stat().st_mtime
             if file_last_modified > article.last_modified:  # TODO: make article method
-                dbg("Found file thats been changed: "+article.name)
+                dbg("Found modified file: " + article.name)
                 found_changes = True
-                old_links = article.md_links
+                old_all_links = article.all_links
+                old_md_links = article.md_links
                 # get links from each line
                 with (open(article.path, "r", encoding="utf-8")
                       as text_file):
                     for text_line in text_file:
-                        self.get_md_links_in_text(text_line, article.name)
+                        # get all links instead
+                        self.get_all_links_in_text(text_line, article.name)
+                # do the md link check here
+                for link in article.all_links:
+                    if check_text_is_local_md_file_name(link):
+                        self.add_link_between_articles(file_name, link)
                 article.last_modified = pathlib.Path(article.path).stat().st_mtime
 
                 # We need to compare the old_links to article.md_links to see
                 # which links were added and which were removed
-                for link in old_links:
+                for link in old_md_links:
                     if link not in article.md_links:
-                        self.remove_link_between_articles(article.name,
-                                                          link)
+                        self.remove_link_between_articles(article.name, link)
+                for link in old_all_links:
+                    if link not in article.all_links:
+                        article.remove_link(link)
+                        self.log("- link: " + article.name + " -> " + link)
         if not found_changes:
             dbg("No file changes detected")
 
-    def get_md_links_in_text(self, line_of_text, file_name):
+    def get_all_links_in_text(self, line_of_text, file_name):
         """
-        Finds all Markdown links in the line of text which are not part
+        Finds all links in the line of text which are not part
         of a code block, then incorporates them into our Articles.
         :param line_of_text: The line of text to check for links
         :param file_name: The name of the file line_of_text comes from
@@ -350,8 +404,8 @@ class ArticleExaminer:
                 # We still have to check whether the link is to a local
                 # Markdown file, or something else (could be an image or
                 # web url)
-                if check_text_is_local_md_file_name(link):
-                    self.add_link_between_articles(file_name, link)
+                self.articles[file_name].add_link(link)
+                self.log("+ link: " + file_name + " -> " + link)
 
     def summarize_md_issues_in(self):
         """
@@ -376,18 +430,17 @@ class ArticleExaminer:
 
     def print_summary(self):
         """
-        Prints the floating and missing articles to the console
+        Prints the floating and missing articles to the console, as well
+        as other prints as required by flags
         :return: None
         """
         if flag["ALLLINKS"]:
             self.print_links()
         print("Floating Articles: ")
-        for article_name in self.floating_articles:
-            print("- " + article_name)
+        run_on_sorted_list(self.floating_articles, lambda article_name: print("- " + article_name))
         print("Missing Articles: ")
-        for article_name in self.missing_articles:
-            print("- " + article_name + " (linked from: "
-                  + str(self.articles[article_name].linked_from) + ")")
+        run_on_sorted_list(self.missing_articles, lambda article_name: print(
+            "- " + article_name + " (linked from: " + str(self.articles[article_name].linked_from) + ")"))
         if flag["DEBUG"]:
             self.print_articles()
 
@@ -403,12 +456,17 @@ class ArticleExaminer:
             print(log_message)
 
     def print_links(self):
+        """
+        Prints the links in each article. Only called if ALLLINKS flag
+        is included, and the print is expanded if NONMD is also included
+        :return: None
+        """
         print("Printing All Links: ")
         for article_name in self.articles:
             article = self.articles[article_name]
-            for link in article.md_links:
-                print(article.name+" -> "+link)
-
+            run_on_sorted_list(article.md_links, lambda link: print(article.name + " -> " + link))
+            if flag["NONMD"]:
+                run_on_sorted_list(article.get_non_md_links(), lambda link: print(article.name + " -> " + link))
 
     def print_articles(self):
         """
@@ -417,8 +475,7 @@ class ArticleExaminer:
         :return: None
         """
         print("Printing articles: ")
-        for article in self.articles:
-            print(self.articles[article])
+        run_on_sorted_list(self.articles.keys(), lambda article_name: print(self.articles[article_name]))
 
     def serialize_to_control_file(self):
         """
@@ -456,8 +513,8 @@ def get_target_directories():
     target_directories = []
     for cl_argument in sys.argv[1:]:
         if cl_argument in flag:
-            dbg("Flag: "+cl_argument)
-            flag[cl_argument]=True
+            dbg("Flag: " + cl_argument)
+            flag[cl_argument] = True
         else:
             dbg("Found path: " + cl_argument)
             target_directories.append(cl_argument)
@@ -521,7 +578,24 @@ def check_text_is_md_file_name(text):
 
 
 def get_time_stamp():
+    """
+    Returns the current time in the format I like.
+    :return: 12/24/23:7:42:22 = 12/24 of 2023 at 7:42 and 22 seconds,
+    but the current time.
+    """
     return datetime.now().strftime("%m%d%y:%H:%M:%S")
+
+
+def run_on_sorted_list(target_list, function_given_string):
+    """
+    Sorts the list, then runs the function on each item.
+    :param target_list: The list to be sorted
+    :param function_given_string: The function to run on each item.
+    :return: None
+    """
+    sorted_list = sorted(target_list)
+    for list_item in sorted_list:
+        function_given_string(list_item)
 
 
 # The main functionality of this file:
