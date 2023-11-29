@@ -48,7 +48,6 @@ all of this without opening or writing an aep-control.pickle file.
     It will then repeat exactly that for wiki2. 
 """
 
-# TODO: make sure of output when no markdown
 flag = dict(
     ALLLINKS=False,  # Print a list of all Markdown links in each file
     DEBUG=False,  # Print all debug statements and end with a full print of the articles.
@@ -434,6 +433,8 @@ class ArticleExaminer:
         as other prints as required by flags
         :return: None
         """
+        if len(self.md_file_list) == 0:
+            return # Dont print if no md, the warning message was printed in ArticleExaminer.setDirectoryRoot
         if flag["ALLLINKS"]:
             self.print_links()
         print("Floating Articles: ")
