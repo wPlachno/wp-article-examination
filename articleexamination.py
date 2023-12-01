@@ -96,9 +96,23 @@ class ArticleExaminer:
             # Narrow down from all files to just markdown files
             self.md_file_list = list(filter(check_text_is_md_file_name,
                                             self.full_file_list))
+            # Update whether each article exists, so that we can see when files are
+            # made or destroyed
+            for article_name in self.articles:
+                article = self.articles[article_name]
+                if article.name in self.md_file_list:
+                    if not article.has_existing_file:
+                        article.has_existing_file = True
+                        self.log("+ existing: "+article.name)
+                else:
+                    if article.has_existing_file:
+                        article.has_existing_file = False
+                        self.log("- existing: "+article.name)
+
             if len(self.md_file_list) == 0:
                 print("WARNING: No markdown files were found in "
                       + str(self.directory_path))
+
             # Finally, prepare our articles for the files which exist
             for md_file in self.md_file_list:
                 if md_file not in self.articles:
@@ -142,8 +156,7 @@ class ArticleExaminer:
         self.log("- md_link: " + source_name + " -> " + destination_name)
         # Remove the link from the destination and delete if no
         # longer needed
-        if (self.articles[destination_name]
-                .remove_md_link_from(source_name)):
+        if (self.articles[destination_name].remove_md_link_from(source_name)):
             del self.articles[destination_name]
             self.log("- article: " + destination_name)
             return destination_name
@@ -166,7 +179,9 @@ class ArticleExaminer:
                 self.dbg("Found modified file: " + article.name)
                 found_changes = True
                 old_all_links = article.all_links
+                article.all_links = []
                 old_md_links = article.md_links
+                article.md_links = []
                 # get links from each line
                 with (open(article.path, "r", encoding="utf-8")
                       as text_file):
