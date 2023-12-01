@@ -38,8 +38,17 @@ class Article:
     """
 
     def __init__(self, file_name, parent_path, exists=False):
+        """
+        Initializes the Article according to its arguments, including
+        all lists. Note that we grab the parent path, convert it to a
+        pathlib.Path, then join it with the file_name, meaning that
+        article.path is a pathlib.Path.
+        :param file_name: The name of the file associated with this article
+        :param parent_path: The path to the parent directory of the file
+        :param exists: Whether we know that this file actually exists
+        """
         self.name = file_name
-        self.path = pathlib.Path.joinpath(parent_path, self.name)
+        self.path = pathlib.Path.joinpath(pathlib.Path(parent_path), self.name)
         # self.last_modified: Time of most recent content modification
         # expressed in seconds.
         self.last_modified = 0
@@ -118,6 +127,7 @@ class Article:
         """
         if md_file_name in self.md_links:
             self.md_links.remove(md_file_name)
+
 
     def remove_md_link_from(self, md_file_name):
         """
