@@ -1,6 +1,6 @@
 """
 article.py
-Separated out of article-examination.py on 11/29/23
+Separated out of articleexamination.py on 11/29/23
 
 Summary: The Article class is used in the article-examination process
 as a data container for each markdown file. The main program is designed

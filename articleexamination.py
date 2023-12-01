@@ -1,109 +1,57 @@
 import pathlib
-import sys
 import re
 import pickle
-from datetime import datetime
-
+import wcutil
 from article import Article
 
 """
-article-examination.py
+articleexamination.py
 Written by Will Plachno on 11/11/23
 
-Summary: This python script checks the markdown files in a directory 
-for files which have no links  from other files (Floating Articles) as 
-well as for file_names that are linked to, but do not correspond with 
-an actual file (Missing Articles).
-
-How to use:
-1. py article-examination.py
-    If you run the script with no arguments, it will output the lists 
-of floating articles and missing articles in the current working 
-directory to the terminal. It will also create aep-control.pickle, the 
-data file that represents the scripts cache.
-2. py article-examination.py wikis/wiki1 VERBOSE
-    This has 2 arguments - 'wikis/wiki1', a directory to run in, and 
-"VERBOSE", the first of our 4 command line flags.
-    VERBOSE triggers the script to print any log messages to the 
-console as they are triggered. This is different from the HISTORY flag, 
-which does not run the main functionality of the script, and instead 
-simply prints the entire log history to the terminal.
-3. py article-examination.py ALLLINKS wikis/wiki1 NOCACHE wikis/wiki2 NONMD DEBUG
-    This final example illustrates three things: that there is no 
-required order between directories and flags, that you can have multiple 
-directories and multiple files, and also shows the final supported flags. 
-Please note that most flags can be combined except for HISTORY, which is 
-designed to be called simply to check the log, not trigger the rest of 
-the ArticleExaminer logic.
-    ALLLINKS means to print a list of each of the links between articles, 
-NOCACHE means to skip reading or writing aep-control.pickle, NONMD 
-means to include non-article links, and DEBUG means to print all the 
-debug messages and follow the script's main print with a print of 
-all the article objects.
-    What you should experience with this combination of arguments is 
-that the script will first work on wiki1, printing out debug messages 
-while checking the links, then printing out a list of all the articles 
-and all of their links, including links to web urls and images, then 
-printing the Floating Articles, then the Missing Articles, which will 
-culminate in the final print of each of the Article objects. It will do 
-all of this without opening or writing an aep-control.pickle file. 
-    It will then repeat exactly that for wiki2. 
+The main class for the aep project. Given a directory, it searches
+through the directory for Markdown files, retrieves all the links,
+and produces two lists: a list of the floating articles, or files
+that are not linked to, and a list of the missing articles, or the
+links inside of existing files that point to files that have not
+yet been written.
 """
 
-flag = dict(
-    ALLLINKS=False,  # Print a list of all Markdown links in each file
-    DEBUG=False,  # Print all debug statements and end with a full print of the articles.
-    HISTORY=False,  # Print the existing log to the terminal without running the link check
-    NOCACHE=False,  # Run without checking or serializing to "aep-control.pickle"
-    NONMD=False,  # Include all links, not just local Markdown links
-    VERBOSE=False  # Print any log messages that trigger while executing
-)
-
-
-def number_of_flags():
-    """
-    Simply returns the number of flags that have been marked. Used
-    simply to test whether HISTORY is the only current flag.
-    :return: The number of flags set to true
-    """
-    number_true = 0
-    for this_flag in flag:
-        if flag[this_flag]:
-            number_true += 1
-    return number_true
-
-
-def dbg(*statements):
-    """
-    Prints the parameters only if debug mode is active.
-    Debug mode can be turned on or off by setting the DEBUG variable.
-    :param statements: Strings to be printed to the console
-    :return: None
-    """
-    if flag["DEBUG"]:
-        for s in statements:
-            print(s, end="")
-        print("")
-
-
-#
+flag_list = list((
+    "ALLLINKS",  # Print a list of all Markdown links in each file
+    "DEBUG",  # Print all debug statements and end with a full print of the articles.
+    "HISTORY",  # Print the existing log to the terminal without running the link check
+    "NOCACHE",  # Run without checking or serializing to "aep-control.pickle"
+    "NONMD",  # Include all links, not just local Markdown links
+    "VERBOSE"  # Print any log messages that trigger while executing
+))
 
 # The ArticleExaminer class is the meat of this program. It tracks what
 # the current working directory is and automatically loads the file
 # lists when the directory changes. It also keeps a dictionary of
 # filenames to Articles
 class ArticleExaminer:
-    def __init__(self, parent_path=None):
-        self.directory_path = parent_path
-        self.control_file_name = "aep-control.pickle"
+    def __init__(self, parent_path=None, flags=None, debug=None):
         self.md_link_regular_expression = re.compile(r"\]\s?\([^\)]*\)")
         self.inside_of_code_block = False
+        if flags:
+            self.flag = flags
+        else:
+            self.flag = wcutil.FlagFarm(flag_list)
+        if debug:
+            self.debug = debug
+            self.dbg = debug.scribe
+        else:
+            self.debug = wcutil.Debug()
+            self.dbg = debug.scribe
+        self.directory_path = parent_path
         self.full_file_list = []
         self.md_file_list = []
+        self.articles = {}
         self.floating_articles = []
         self.missing_articles = []
+
+        self.control_file_name = "aep-control.pickle"
         self.log_archive = []
-        self.articles = {}
         self.set_directory_path(self.directory_path)
 
     def log(self, core_message):
@@ -112,10 +60,11 @@ class ArticleExaminer:
         :param core_message: The message to log
         :return: None
         """
-        log_message = get_time_stamp() + ": " + core_message
+        log_message = wcutil.time_stamp() + ": " + core_message
         self.log_archive.append(log_message)
-        if flag["DEBUG"] or flag["VERBOSE"]:
+        if self.flag["DEBUG"] or self.flag["VERBOSE"]:
             print("LOG: " + log_message)
+
 
     def set_directory_path(self, directory_path):
         """
@@ -127,7 +76,7 @@ class ArticleExaminer:
         :param directory_path: A directory path with markdown files inside
         :return: None
         """
-        if check_valid_directory_at(directory_path):
+        if wcutil.valid_directory_at(directory_path):
             # Note that the directory_path is saved not as a string,
             # but as an actual Path object.
             self.directory_path = pathlib.Path(directory_path)
@@ -136,7 +85,7 @@ class ArticleExaminer:
             for file in self.directory_path.iterdir():
                 self.full_file_list.append(file.name)
             # Check for a control file and incorporate it
-            if (not flag["NOCACHE"]) and (self.control_file_name in self.full_file_list):
+            if (not self.flag["NOCACHE"]) and (self.control_file_name in self.full_file_list):
                 deserialized = self.deserialize_control_file()
                 self.articles = deserialized.articles
                 self.floating_articles = deserialized.floating_articles
@@ -156,7 +105,7 @@ class ArticleExaminer:
                     self.articles[md_file] = Article(md_file,
                                                      self.directory_path,
                                                      exists=True)
-                    dbg("Found new markdown file: " + md_file)
+                    self.dbg("Found new markdown file: " + md_file)
 
     def add_link_between_articles(self, source_name, destination_name):
         """
@@ -209,12 +158,12 @@ class ArticleExaminer:
         for file_name in self.md_file_list:
             article = self.articles[file_name]
             if article.is_not_written():
-                dbg("Found an article that used to be missing: " + article.name)
+                self.dbg("Found an article that used to be missing: " + article.name)
                 article.has_existing_file = True
             # Only update links if file has changed
             file_last_modified = pathlib.Path(article.path).stat().st_mtime
             if file_last_modified > article.last_modified:
-                dbg("Found modified file: " + article.name)
+                self.dbg("Found modified file: " + article.name)
                 found_changes = True
                 old_all_links = article.all_links
                 old_md_links = article.md_links
@@ -240,7 +189,7 @@ class ArticleExaminer:
                         article.remove_link(link)
                         self.log("- link: " + article.name + " -> " + link)
         if not found_changes:
-            dbg("No file changes detected")
+            self.dbg("No file changes detected")
 
     def get_all_links_in_text(self, line_of_text, file_name):
         """
@@ -285,7 +234,7 @@ class ArticleExaminer:
                 self.floating_articles.append(article)
             if self.articles[article].is_not_written():
                 self.missing_articles.append(article)
-        if not flag["NOCACHE"]:
+        if not self.flag["NOCACHE"]:
             # Save our new status
             self.serialize_to_control_file()
 
@@ -296,15 +245,15 @@ class ArticleExaminer:
         :return: None
         """
         if len(self.md_file_list) == 0:
-            return # Dont print if no md, the warning message was printed in ArticleExaminer.setDirectoryRoot
-        if flag["ALLLINKS"]:
+            return  # Don't print if no md, the warning message was printed in ArticleExaminer.setDirectoryRoot
+        if self.flag["ALLLINKS"]:
             self.print_links()
         print("Floating Articles: ")
-        run_on_sorted_list(self.floating_articles, lambda article_name: print("- " + article_name))
+        wcutil.run_on_sorted_list(self.floating_articles, lambda article_name: print("- " + article_name))
         print("Missing Articles: ")
-        run_on_sorted_list(self.missing_articles, lambda article_name: print(
+        wcutil.run_on_sorted_list(self.missing_articles, lambda article_name: print(
             "- " + article_name + " (linked from: " + str(self.articles[article_name].linked_from) + ")"))
-        if flag["DEBUG"]:
+        if self.flag["DEBUG"]:
             self.print_articles()
 
     def print_log(self):
@@ -327,9 +276,9 @@ class ArticleExaminer:
         print("Printing All Links: ")
         for article_name in self.articles:
             article = self.articles[article_name]
-            run_on_sorted_list(article.md_links, lambda link: print(article.name + " -> " + link))
-            if flag["NONMD"]:
-                run_on_sorted_list(article.get_non_md_links(), lambda link: print(article.name + " -> " + link))
+            wcutil.run_on_sorted_list(article.md_links, lambda link: print(article.name + " -> " + link))
+            if self.flag["NONMD"]:
+                wcutil.run_on_sorted_list(article.get_non_md_links(), lambda link: print(article.name + " -> " + link))
 
     def print_articles(self):
         """
@@ -338,7 +287,7 @@ class ArticleExaminer:
         :return: None
         """
         print("Printing articles: ")
-        run_on_sorted_list(self.articles.keys(), lambda article_name: print(self.articles[article_name]))
+        wcutil.run_on_sorted_list(self.articles.keys(), lambda article_name: print(self.articles[article_name]))
 
     def serialize_to_control_file(self):
         """
@@ -365,111 +314,16 @@ class ArticleExaminer:
         return new_article_examiner
 
 
-def get_target_directories():
-    """
-    Gets the target directory paths, either as a command line argument
-    or the working directory. Also deciphers the rest of the command
-    line arguments for flags like VERBOSE and HISTORY
-    :return: A list of directory paths
-    """
-    # Decipher the command line arguments
-    target_directories = []
-    for cl_argument in sys.argv[1:]:
-        if cl_argument in flag:
-            dbg("Flag: " + cl_argument)
-            flag[cl_argument] = True
-        else:
-            dbg("Found path: " + cl_argument)
-            target_directories.append(cl_argument)
-    if len(target_directories) < 1:
-        dbg("Using working directory")
-        target_directories.append(pathlib.Path().resolve())
-    return target_directories
-
-
-def check_valid_directory_at(directory_path):
-    """
-    Determines whether the path points to an actual directory
-    :param directory_path: A path, hopefully a directory
-    :return: Whether path actually leads to a directory.
-    """
-    try:
-        if directory_path and pathlib.Path(directory_path).is_dir():
-            return True
-    except Exception:
-        return False
-    return False
-
-
-def check_text_has_paths(text):
-    """
-    Checks a string for any path delimiters
-    :param text: The string to check for path delimiters
-    :return: Whether text contains path delimiters
-    """
-    has_paths = False
-    try:
-        text.index('/')
-        has_paths = True
-    finally:
-        try:
-            text.index('\\')
-            has_paths = True
-        finally:
-            return has_paths
-
-
 def check_text_is_local_md_file_name(text):
     """
     Checks both that the string has no paths and has a .md file extension
     :param text: The text to check for paths and correct file extension
     :return: True if the text is a local file name with a .md extension
     """
-    if check_text_has_paths(text):
+    if wcutil.text_has_paths(text):
         return False
     return check_text_is_md_file_name(text)
 
 
 def check_text_is_md_file_name(text):
-    """
-    Checks the string for a .md file extension
-    :param text: The string to check for a file extension
-    :return: True if text ends in ".md"
-    """
-    extension = text[-3:]
-    return extension == ".md"
-
-
-def get_time_stamp():
-    """
-    Returns the current time in the format I like.
-    :return: 12/24/23:7:42:22 = 12/24 of 2023 at 7:42 and 22 seconds,
-    but the current time.
-    """
-    return datetime.now().strftime("%m%d%y:%H:%M:%S")
-
-
-def run_on_sorted_list(target_list, function_given_string):
-    """
-    Sorts the list, then runs the function on each item.
-    :param target_list: The list to be sorted
-    :param function_given_string: The function to run on each item.
-    :return: None
-    """
-    sorted_list = sorted(target_list)
-    for list_item in sorted_list:
-        function_given_string(list_item)
-
-
-# The main functionality of this file:
-# Get the path, instantiate the ArticleExaminer,
-# find all links, and print the links to the console
-directory_paths = get_target_directories()
-for path in directory_paths:
-    article_examiner = ArticleExaminer(path)
-    if flag["HISTORY"]:
-        print("Printing log for: " + str(path))
-        article_examiner.print_log()
-    if not flag["HISTORY"] or number_of_flags() > 1:
-        article_examiner.summarize_md_issues_in()
-        article_examiner.print_summary()
+    return wcutil.tail_matches_token(text, ".md")
