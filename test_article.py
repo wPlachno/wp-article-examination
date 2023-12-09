@@ -16,6 +16,7 @@ Article.is_not_written
 Article.__str__
 """
 from article import Article
+from wcutil import tail_matches_token
 
 class TestArticle:
     file_name = "test.md"
@@ -57,11 +58,12 @@ class TestArticle:
 
     def test_get_non_md_links(self):
         art = Article(self.file_name, self.parent_path)
-        art.add_link(self.links[0])
-        art.add_link(self.links[1])
-        art.add_link(self.links[2])
+        for link in self.links:
+            art.add_link(link)
+            if tail_matches_token(link, ".md"):
+                art.add_md_link_to(link)
         non_links = art.get_non_md_links()
-        assert len(non_links) == 1
+        assert len(non_links) == 1, "We should only be getting the non-md links."
         assert non_links[0] == self.links[1]
 
     def test_add_md_link_to(self):
