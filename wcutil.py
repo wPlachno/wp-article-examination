@@ -126,3 +126,43 @@ def run_on_sorted_list(target_list, function_given_item):
     sorted_list = sorted(target_list)
     for list_item in sorted_list:
         function_given_item(list_item)
+
+def decipher_command_line(arguments, flags):
+    """
+    Gets the target directory paths, either as a command line argument
+    or the working directory. Also deciphers the rest of the command
+    line arguments for flags like VERBOSE and HISTORY
+    :return: A list of directory paths
+    """
+    # Decipher the command line arguments
+    target_directories = []
+    for cl_argument in arguments[1:]:
+        arg_as_flag = cl_argument.upper()
+        if flags.has_flag(arg_as_flag):
+            flags.activate(arg_as_flag)
+        else:
+            target_directories.append(cl_argument)
+    if len(target_directories) < 1:
+        target_directories.append(pathlib.Path().resolve())
+    return target_directories
+
+class WoodChipperFile:
+
+    def __init__(self, filePath):
+        self.path = pathlib.Path(filePath)
+        self.name = self.path.name
+        self.text = list(())
+
+    def read(self):
+        with (open(self.path, "r")
+              as text_file):
+            self.text = list(text_file)
+
+    def write(self):
+        with (open(self.path, "w")
+              as text_file):
+            for text_line in self.text:
+                text_file.write(text_line)
+
+    def __str__(self):
+        return self.name + " (" + self.path + "): " + len(self.text) + " items"
