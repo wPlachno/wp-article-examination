@@ -49,12 +49,11 @@ import pathlib
 from articleexamination import ArticleExaminer, flag_list
 import wcutil
 
-flags = wcutil.FlagFarm(flag_list)
+flags = None
+debug = None
+dbg = None
 
-debug = wcutil.Debug(active=False)
-dbg = debug.scribe
-
-def get_target_directories():
+def get_target_directories(args):
     """
     Gets the target directory paths, either as a command line argument
     or the working directory. Also deciphers the rest of the command
@@ -63,7 +62,7 @@ def get_target_directories():
     """
     # Decipher the command line arguments
     target_directories = []
-    for cl_argument in sys.argv[1:]:
+    for cl_argument in args[1:]:
         arg_as_flag = cl_argument.upper()
         if flags.has_flag(arg_as_flag):
             flags.activate(arg_as_flag)
@@ -76,17 +75,25 @@ def get_target_directories():
         target_directories.append(pathlib.Path().resolve())
     return target_directories
 
-# The main functionality of this file:
-# Get the path, instantiate the ArticleExaminer,
-# find all links, and print the links to the console
-directory_paths = get_target_directories()
-for path in directory_paths:
-    article_examiner = ArticleExaminer(path, flags=flags, debug=debug)
-    if flags["HISTORY"]:
-        print("Printing log for: " + str(path))
-        article_examiner.print_log()
-    if not flags["HISTORY"] or flags.active_count() > 1:
-        article_examiner.summarize_md_issues_in()
-        article_examiner.print_summary()
+def _main (args):
+    flags = wcutil.FlagFarm(flag_list)
+    debug = wcutil.Debug(active=False)
+    dbg = debug.scribe
+
+    # The main functionality of this file:
+    # Get the path, instantiate the ArticleExaminer,
+    # find all links, and print the links to the console
+    directory_paths = get_target_directories(sys.argv)
+    for path in directory_paths:
+        article_examiner = ArticleExaminer(path, flags=flags, debug=debug)
+        if flags["HISTORY"]:
+            print("Printing log for: " + str(path))
+            article_examiner.print_log()
+        if not flags["HISTORY"] or flags.active_count() > 1:
+            article_examiner.summarize_md_issues_in()
+            article_examiner.print_summary()
+
+if __name__ == "__main__":
+    _main(sys.argv)
 
 
